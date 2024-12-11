@@ -23,9 +23,7 @@ class CGDRec(nn.Module):
         self.item_embedding = nn.Embedding(self.opt.item_num, self.hidden_size)
         self.user_embedding = nn.Embedding(self.opt.user_num, self.hidden_size)
         self.pos_embedding = nn.Embedding(200, self.hidden_size)
-
         self.conv_appnp = APPNP(K=self.local_k, alpha=0)
-
 
         self.W_1 = nn.Linear(self.hidden_size, self.hidden_size * self.num_interest)
         self.W_2 = nn.Linear(self.hidden_size, self.hidden_size * 4)
@@ -35,7 +33,6 @@ class CGDRec(nn.Module):
         self.fc2 = nn.Linear(self.hidden_size, self.hidden_size)
 
         self.diffusion_model = GaussianDiffusion(opt)
-
         self.denoise_model_i = Denoise(self.opt, self.opt.item_num, self.opt.middle_size, self.opt.time_size)
         self.denoise_model_u = Denoise(self.opt, self.opt.user_num, self.opt.middle_size, self.opt.time_size)
         
@@ -70,22 +67,18 @@ class CGDRec(nn.Module):
         return [emb, embedsLst]
     
     def cl_autoencoder(self, item_embedding, user_embedding, u_i_matrixs):
-   
         graph_edge, bi_ui, bi_ui_dok = u_i_matrixs
         embeds = torch.concat([user_embedding, item_embedding], axis=0)
 
         # encode
         embeds, embedsLst = self.encoder_cl(bi_ui, embeds)
         user_embedding, item_embedding = embeds[:self.opt.user_num], embeds[self.opt.user_num:]
-       
         return item_embedding, user_embedding
     
 
     def sequence_modeling(self, item_seq, item_embedding, mask=None):
         mask = item_seq.gt(0)
-
         item_emb = item_embedding[item_seq]
-
         pos_emb = self.pos_embedding.weight[:item_seq.shape[1], ].view(-1, item_seq.shape[1], self.hidden_size)
         item_emb_w_pos = item_emb + pos_emb
 
@@ -97,7 +90,6 @@ class CGDRec(nn.Module):
         item_attn_w = torch.where(attn_mask, item_attn_w, padding)
         item_attn_w = torch.softmax(item_attn_w, -1)
         interest_emb = torch.matmul(item_attn_w, item_emb)
-
         return interest_emb
 
     def graph_modeling(self, item_seq, user_id, item_embedding, user_embedding, u_i_matrixs):
@@ -134,7 +126,6 @@ class CGDRec(nn.Module):
         return torch.matmul(z1, z2.transpose(-1, -2))
     
     def get_local_cl_loss(self, z1: torch.Tensor, z2: torch.Tensor):
-
         z1 = z1.permute(1, 0, 2)
         z2 = z2.permute(1, 0, 2)
 
@@ -159,8 +150,8 @@ class CGDRec(nn.Module):
 
         return cl_loss
 
-    def get_recommend_loss(self, user_emb, target_item_emb, neg_item_emb):
-        target_emb = target_item_emb.unsqueeze(-2)
+    def get_recommend_loss(self, user_emb, target_item, neg_item):
+        target_emb = self.item_embedding(target_item).unsqueeze(-2)
         attn = torch.matmul(target_emb, user_emb.permute(0, 2, 1)).squeeze(1)
         attn = torch.argmax(attn, dim=-1) + torch.arange(attn.shape[0]).to(device) * self.num_interest
         user_emb = user_emb.view(-1, self.hidden_size)
@@ -169,7 +160,7 @@ class CGDRec(nn.Module):
         # sample loss
         readout = readout.unsqueeze(-2)
         pos_score = torch.matmul(readout, target_emb.transpose(-2, -1)).squeeze(1)
-        neg_emb = neg_item_emb.view(1, -1, self.hidden_size).repeat(readout.shape[0], 1, 1)
+        neg_emb = self.item_embedding(neg_item).view(1, -1, self.hidden_size).repeat(readout.shape[0], 1, 1)
         neg_score = torch.matmul(readout, neg_emb.transpose(-2, -1)).squeeze(1)
 
         score = torch.cat([pos_score, neg_score], -1)
@@ -197,7 +188,6 @@ class CGDRec(nn.Module):
         return loss
     
     def get_diff_cl_loss(self, emb_diff, emb_src, pos, neg):
-        
         # bs * hidden_size
         target_emb = emb_diff[pos]
         pos_emb = emb_src[pos]
@@ -211,11 +201,6 @@ class CGDRec(nn.Module):
         score = torch.log_softmax(score, -1)[:, 0]
         loss = -torch.mean(score)
         return loss
-    
-    def cal_bpr_loss(anc_embeds, pos_embeds, neg_embeds):
-        pos_preds = (anc_embeds * pos_embeds).sum(-1)
-        neg_preds = (anc_embeds * neg_embeds).sum(-1)
-        return torch.sum(F.softplus(neg_preds - pos_preds))
     
     def reset_parameters(self):
         stdv = 1.0 / math.sqrt(self.hidden_size)
@@ -289,7 +274,6 @@ class GaussianDiffusion(nn.Module):
         indices = list(range(self.denoise_steps))[::-1]
         for i in indices:
             t = torch.tensor([i] * x_t.shape[0]).to(device)
-            
             model_mean, model_log_variance = self.p_mean_variance(model, x_t, cond, t)
             x_t = model_mean
         return x_t
@@ -305,14 +289,6 @@ class GaussianDiffusion(nn.Module):
         arr = arr.to(device)
         res = arr[tmp1, tmp2].float()
         
-        while len(res.shape) < len(broadcast_shape):
-            res = res[..., None]
-        return res.expand(broadcast_shape)
-    
-    def _extract_into_tensor_(self, arr, timesteps, broadcast_shape):
-        arr = arr.to(device)
-        res = arr[timesteps].float()
-
         while len(res.shape) < len(broadcast_shape):
             res = res[..., None]
         return res.expand(broadcast_shape)
@@ -338,21 +314,10 @@ class GaussianDiffusion(nn.Module):
         
     def mean_flat(self, tensor):
         return tensor.mean(dim=list(range(1, len(tensor.shape))))
-
-    def SNR(self, t):
-        alphas_cumprod = self.alphas_cumprod.to(device)
-        tmp1 = torch.arange(t.shape[0]).reshape([-1,1]).to(device)
-        tmp2 = t.reshape([-1,1]).to(device)
-        res = alphas_cumprod[tmp1, tmp2].squeeze(-1)
-        return res / (1 - res)
     
-    
-
-
 class Denoise(nn.Module):
     def __init__(self, opt, node_num, middle_size, time_emb_dim, norm=False):
         super(Denoise, self).__init__()
-        
         self.in_dims = [node_num, middle_size]
         self.out_dims = [middle_size, node_num]
         self.node_num = node_num
@@ -360,9 +325,13 @@ class Denoise(nn.Module):
         self.time_emb_dim = time_emb_dim
         self.norm = norm
         self.hidden_size = opt.hidden_size
-        self.atten_mode = opt.atten_mode
-
         self.emb_layer = nn.Linear(self.time_emb_dim, self.time_emb_dim)
+
+        self.autoencoder = nn.Sequential(    
+            nn.Linear(self.node_num + self.time_emb_dim, self.middle_size),
+            nn.Tanh(),
+            nn.Linear(self.middle_size, self.node_num)
+        )
 
         self.encoder_x2e = nn.Sequential(    
             nn.Linear(self.node_num + self.time_emb_dim, self.middle_size),
@@ -440,40 +409,27 @@ class GCNLayer(nn.Module):
 
 
 def diffusion_training(model, diffusion_loader, item=True):
-    
     batch_loss = 0.
     for node_id, node_neighbor, maximum, minimum in tqdm(diffusion_loader):
-        
         node_id, node_neighbor = node_id.to(device), node_neighbor.to(device)
         maximum, minimum = maximum.to(device), minimum.to(device)
         model.diffusion_model.noise_calculation(maximum, minimum)
-        
-        
         mask = node_neighbor.to(torch.bool).to(torch.int32)
-        
         
         if item:
             model.diffusion_opt_i.zero_grad()
-            
             item_emb = model.item_embedding(node_id)
-            
             condition = [item_emb, model.item_embedding.weight, mask]
-            
             diff_loss = model.diffusion_model.training_losses(model.denoise_model_i, node_neighbor, condition)
-            
             loss = diff_loss.mean()
             batch_loss += loss.item()
             loss.backward()
             model.diffusion_opt_i.step()
         else:
             model.diffusion_opt_u.zero_grad()
-            
             user_emb = model.user_embedding(node_id)
-            
             condition = [user_emb, model.user_embedding.weight, mask]
-            
             diff_loss = model.diffusion_model.training_losses(model.denoise_model_u, node_neighbor, condition)
-            
             loss = diff_loss.mean()
             batch_loss += loss.item()
             loss.backward()
@@ -485,16 +441,12 @@ def diffusion_training(model, diffusion_loader, item=True):
         print('user_loss: ',batch_loss / len(diffusion_loader))
 
 
-def diffusion_inference(model, diffusion_loader, graph, rebuild_k, noise_ratio, item=True, degree=None):
-    
-    # 取出
+def diffusion_inference(model, diffusion_loader, graph, rebuild_k, item=True, degree=None):
 
     with torch.no_grad():
-        
         gen_row_list = []
         gen_col_list = []
         gen_value_list = []
-        
         res_row_list = []
         res_col_list = []
         res_value_list = []
@@ -515,7 +467,6 @@ def diffusion_inference(model, diffusion_loader, graph, rebuild_k, noise_ratio, 
                 condition = [item_emb, model.item_embedding.weight, mask]
                 denoised_batch = model.diffusion_model.p_sample(model.denoise_model_i, node_neighbor, condition)
             else:
-                
                 user_emb = model.user_embedding(node_id)
                 condition = [user_emb, model.user_embedding.weight, mask]
                 denoised_batch = model.diffusion_model.p_sample(model.denoise_model_u, node_neighbor, condition)    
@@ -530,19 +481,13 @@ def diffusion_inference(model, diffusion_loader, graph, rebuild_k, noise_ratio, 
                 res_value_list.append(res_value)
                 
                 median = torch.median(x_0[x_0 != 0])
-                
                 select_col = torch.where(torch.logical_and((x_0_pred > median), (x_0 == 0)))[0]
                 
                 if len(select_col) != 0 and rebuild_k > 0:
-                    
                     select_value = x_0_pred[select_col]
-                    
                     k = len(select_value) if len(select_value) < rebuild_k else rebuild_k
-                
                     value, indices = torch.topk(select_value, k=k)
-                    
                     value = value / torch.max(value) * max_norm
-                    
                     col = select_col[indices]
                     row = torch.ones_like(col) * row_index
                 
@@ -569,14 +514,11 @@ def diffusion_inference(model, diffusion_loader, graph, rebuild_k, noise_ratio, 
         else:
             aug_graph = (primal_graph + res_graph).coalesce()
         
-        
         reverse_norm_graph = degree.to(device) * aug_graph
-    
         index = reverse_norm_graph._indices().cpu()
         values = reverse_norm_graph._values().cpu()
         graph_sp = sp.coo_matrix((values, (index[0], index[1])), graph.shape)
         graph_aug = makeTorchAdj_noself(graph_sp)
-        
     return graph_aug
 
 
