@@ -27,161 +27,58 @@ logging.basicConfig(
 
 def generate_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', default='clothing', help='clothing/toys/gowalla')
+    parser.add_argument('--dataset', default='clothing', help='clothing/toys/beauty/gowalla/yelp')
     parser.add_argument('--hidden_size', type=int, default=64)
     parser.add_argument('--epoch', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--batch_size_d', type=int, default=2048)
     parser.add_argument('--num_interest', type=int, default=4)
-    parser.add_argument('--r', type=float, default=0.5)
+    parser.add_argument('--max_len', type=int, default=20)
     parser.add_argument('--lr', type=float, default=0.01, help='learning rate.')
     parser.add_argument('--lr_step', type=float, default=10)
     parser.add_argument('--lr_gamma', type=float, default=0.5)
-    parser.add_argument('--mask_step', type=int, default=50)
-    parser.add_argument('--max_len', type=int, default=20)
-
-    parser.add_argument('--train_steps', type=int, default=5)
-    parser.add_argument('--noise_steps', type=int, default=1)
-    parser.add_argument('--denoise_steps', type=int, default=1)
-    parser.add_argument('--rebuild_k', type=int, default=10)
-    parser.add_argument('--noise_ratio', type=float, default=0.1)
-    
-    parser.add_argument('--train_ratio', type=float, default=0.2)
-    parser.add_argument('--sample_epoch', type=float, default=2)
-    parser.add_argument('--time_size', type=int, default=64)
-    parser.add_argument('--middle_size', type=int, default=512)
-    parser.add_argument('--split_dataset', type=bool, default=True)
-    
-    parser.add_argument('--atten_mode', type=str, default='new')
-    parser.add_argument('--test_dropout', type=float, default=0.5)
-    parser.add_argument('--noise_test', type=float, default=0.2)
-
-    # trade-off parameter
-
-    parser.add_argument('--lambda_bpr', type=float, default=1)
-    parser.add_argument('--lambda_cl', type=float, default=1)
-    parser.add_argument('--lambda_diffcl', type=float, default=0)
-
-    # number of layers within two levels
-    parser.add_argument('--co_layers', type=int, default=1)
-    parser.add_argument('--cl_layers', type=int, default=1)
-
-    # autoencoder parameter
-    parser.add_argument('--path_prob', type=int, default=0.5)
-    parser.add_argument('--K', type=int, default=50)
-    parser.add_argument('--decoder_dropout', type=float, default=0.2, help='split the portion')
-
-    # temperature parameter
-    parser.add_argument('--cl_tau', type=float, default=1, help='temperature parameter of co-info')
-    parser.add_argument('--recon_tau', type=float, default=1, help='split the portion')
-    
     parser.add_argument('--validation', action='store_true', help='validation')
     parser.add_argument('--valid_portion', type=float, default=0.1, help='split the portion')
     parser.add_argument('--patience', type=int, default=3)
     parser.add_argument('--scheduler', type=bool, default=True)
     parser.add_argument('--graph_iter', type=bool, default=True)
+    parser.add_argument('--split_dataset', type=bool, default=False)
     
+    # trade-off parameter
+    parser.add_argument('--r', type=float, default=0.5)
+    parser.add_argument('--lambda_bpr', type=float, default=1)
+    parser.add_argument('--lambda_cl', type=float, default=1)
+    parser.add_argument('--lambda_diffcl', type=float, default=1e-5)
+    
+    # denoise model
+    parser.add_argument('--time_size', type=int, default=64)
+    parser.add_argument('--middle_size', type=int, default=512)
+
+    # diffusion model
+    parser.add_argument('--train_steps', type=int, default=5)
+    parser.add_argument('--noise_steps', type=int, default=2)
+    parser.add_argument('--denoise_steps', type=int, default=3)
+    parser.add_argument('--train_ratio', type=float, default=0.2)
+    parser.add_argument('--sample_epoch', type=float, default=2)
+    parser.add_argument('--rebuild_k', type=int, default=10)
+    parser.add_argument('--noise_ratio', type=float, default=0.1)
+    
+    # number of layers
+    parser.add_argument('--co_layers', type=int, default=1)
+    parser.add_argument('--cl_layers', type=int, default=1)
+
+    # temperature parameter
+    parser.add_argument('--cl_tau', type=float, default=1, help='temperature parameter of co-info')
+    parser.add_argument('--recon_tau', type=float, default=1, help='split the portion')
+
     opt = parser.parse_args()
-    return opt
-
-def fix_opt(opt):
-    if opt.dataset == 'clothing':
-        opt.lr = 1e-3
-        # opt.atten_mode = 'p'
-        opt.r = 0.6
-        opt.epoch = 50
-        opt.scheduler = True
-        opt.sample_epoch = 5
-        opt.train_ratio = 0.05
-        opt.train_steps = 5
-        opt.noise_steps = 2
-        opt.denoise_steps = 3
-        opt.split_dataset = False
-        opt.graph_iter = True
-        opt.lambda_diffcl = 1e-5
-
-    elif opt.dataset == 'toys':
-        opt.lr = 1e-2
-        opt.epoch = 30
-        # opt.atten_mode = 'p'
-        opt.r = 0.7
-        opt.sample_epoch = 8
-        opt.scheduler = True
-        opt.train_ratio = 0.1 #0.1
-        opt.middle_size = 128
-        opt.train_steps = 6 #6
-        opt.noise_steps = 1
-        opt.denoise_steps = 3
-        opt.split_dataset = False
-        opt.graph_iter = True
-        opt.lambda_diffcl = 1e-5
-        
-        # toys 压力测试
-
-    elif opt.dataset == 'gowalla':
-        opt.lr = 1e-2
-        # opt.atten_mode = 'sp'
-        opt.epoch = 50
-        opt.batch_size_d = 64
-        opt.r = 0.8
-        opt.middle_size = 128
-        opt.sample_epoch = 8
-        opt.train_ratio = 0.02
-        opt.train_steps = 7
-        opt.denoise_steps = 4
-        opt.noise_steps = 4
-        # opt.train_ratio = 0.01
-        opt.split_dataset = False
-        opt.scheduler = True
-        opt.graph_iter = True
-        opt.lambda_diffcl = 1e-6
-        
-    # 复现完毕
-    elif opt.dataset == 'yelp':
-        opt.lr = 1e-3
-        # opt.atten_mode = 'p'
-        opt.r = 0.6
-        opt.epoch = 50
-        opt.sample_epoch = 5
-        opt.train_ratio = 0.05 #0.02
-        opt.train_steps = 5
-        opt.noise_steps = 2
-        opt.denoise_steps = 3
-        opt.split_dataset = False
-        opt.scheduler = False
-        opt.graph_iter = True
-        opt.lambda_diffcl = 1e-5
-
-    # ？？？？
-    elif opt.dataset == 'beauty':
-        opt.lr = 1e-3
-        # opt.atten_mode = 'p'
-        opt.r = 0.8
-        opt.epoch = 30
-        opt.sample_epoch = 5
-        opt.train_ratio = 0.05
-        opt.train_steps = 5
-        opt.noise_steps = 2
-        opt.denoise_steps = 3
-        opt.split_dataset = False
-        opt.scheduler = False
-        opt.graph_iter = True
-        opt.lambda_diffcl = 1e-5
-        
-    if opt.denoise_steps > opt.train_steps:
-        opt.denoise_steps = opt.train_steps
-        
-    opt.denoise_steps = opt.noise_steps + 1
-    
     return opt
 
 def evaluate_full(scores, pos_items, topN):
     score = scores[1][:, :, :topN].detach().cpu().numpy()
     value = scores[0][:, :, :topN].detach().cpu().numpy()
-
     pos_num = torch.sum(pos_items.gt(0), -1).numpy()
     pos_items = pos_items.numpy()
-
     total = 0
     total_recall = 0.0
     total_ndcg = 0.0
@@ -226,11 +123,9 @@ def evaluate_full(scores, pos_items, topN):
             total_hitrate += 1
 
     total = pos_items.shape[0]
-
     recall = total_recall * 1.0 / total
     ndcg = total_ndcg * 1.0 / total
     hitrate = total_hitrate * 1.0 / total
-
     return recall, ndcg, hitrate
 
 
@@ -256,14 +151,12 @@ def evaluate_score(model, test_data, _type='test', embedding=None):
         
         interest_emb = interest_emb.data
         scores = torch.matmul(interest_emb.half(), item_emb.transpose(-2, -1).half())
-        
         scores = scores.topk(50)
- 
+
         recall, ndcg, hit = evaluate_full(scores, pos_item, 50)
         result[0].append(recall)
         result[1].append(ndcg)
         result[2].append(hit)
-
         recall2, ndcg2, hit2 = evaluate_full(scores, pos_item, 20)
         result20[0].append(recall2)
         result20[1].append(ndcg2)
@@ -294,8 +187,8 @@ def train_test(opt, model, train_data, valid_data, test_data, sparse_matrix, epo
     diffusion_training(model, diffusion_loader_i)
     diffusion_training(model, diffusion_loader_u, item=False)
     
-    i_i_aug = diffusion_inference(model, diffusion_loader_i, i_i_one, rebuild_k=opt.rebuild_k, noise_ratio=opt.noise_ratio, degree=i_i_degree)
-    u_u_aug = diffusion_inference(model, diffusion_loader_u, u_u_one, rebuild_k=opt.rebuild_k, noise_ratio=opt.noise_ratio, item=False, degree=u_u_degree)
+    i_i_aug = diffusion_inference(model, diffusion_loader_i, i_i_one, rebuild_k=opt.rebuild_k, degree=i_i_degree)
+    u_u_aug = diffusion_inference(model, diffusion_loader_u, u_u_one, rebuild_k=opt.rebuild_k, item=False, degree=u_u_degree)
 
     if opt.graph_iter:
         diffusion_loader_i.dataset.update_graph(i_i_aug)
@@ -326,12 +219,9 @@ def train_test(opt, model, train_data, valid_data, test_data, sparse_matrix, epo
         # local-cl loss
         interest, local_cl_loss, user_emb, item_emb = model(item_list, user_id, item_embedding[0], user_embedding[0], u_i_matrixs)
         
-        final_item_emb = item_emb
-        target_item_emb = final_item_emb[target_item]
-        neg_item_emb = final_item_emb[neg_sample]
+        recommend_loss = model.get_recommend_loss(interest, target_item, neg_sample)
         
         # recommend loss
-        recommend_loss = model.get_recommend_loss(interest, target_item_emb, neg_item_emb)
         cl_loss = recommend_loss + opt.lambda_cl * local_cl_loss
         
         # new cl loss
@@ -365,7 +255,8 @@ def train_test(opt, model, train_data, valid_data, test_data, sparse_matrix, epo
     logging.info('\tRecLoss:\t%.3f %3.f' % (total_cl_loss / len(train_loader), total_cl_loss))
     logging.info('\tReconLoss:\t%.3f %3.f' % (total_gcl_loss / len(train_loader), total_gcl_loss))
 
-    result_test_50, result_test_20 = evaluate_score(model, test_data, _type='test', embedding=final_item_emb)
+    item_embedding = model.co_encoder(i_i_aug, model.item_embedding)
+    result_test_50, result_test_20 = evaluate_score(model, test_data, _type='test', embedding=item_embedding[0])
     result_test_20 = [i * 100 for i in result_test_20]
     result_test_50 = [i * 100 for i in result_test_50]
     result_valid_20, result_valid_50 = result_test_20, result_test_50
@@ -378,7 +269,6 @@ def sim(z1, z2):
     return torch.matmul(z1, z2.transpose(-1, -2))
 
 def main(opt):
-    
     path = f'datasets/{opt.dataset}'
     item_map_file = path + '/' + opt.dataset + '_item_map.txt'
     user_map_file = path + '/' + opt.dataset + '_user_map.txt'
@@ -416,7 +306,6 @@ def main(opt):
     i_i_degree = torch.sparse.sum(i_i_diff, dim=-1).to_dense()
     i_i_degree_inv = i_i_degree.pow(-1)
     i_i_diff = (i_i_degree_inv * i_i_diff).cuda()
-    
     
     # user-user graph
     u_u_dok = u_u.todok()
@@ -529,6 +418,88 @@ def sampling(matrix, opt):
     v = torch.tensor(v)
     sampling_matrix = torch.sparse.FloatTensor(indices, v, [num, matrix.shape[-1]])
     return sampling_matrix, perm_max, perm_min, perm
+
+
+def fix_opt(opt):
+    if opt.dataset == 'clothing':
+        opt.lr = 1e-3
+        opt.r = 0.7
+        opt.epoch = 50
+        opt.scheduler = True
+        opt.sample_epoch = 5
+        opt.train_ratio = 0.05
+        opt.train_steps = 5
+        opt.noise_steps = 2
+        opt.denoise_steps = 3
+        opt.split_dataset = False
+        opt.graph_iter = True
+        opt.lambda_diffcl = 1e-5
+
+    elif opt.dataset == 'toys':
+        opt.lr = 1e-2
+        opt.epoch = 30
+        opt.r = 0.6
+        opt.sample_epoch = 8
+        opt.scheduler = True
+        opt.train_ratio = 0.1 #0.1
+        opt.middle_size = 128
+        opt.train_steps = 6 #6
+        opt.noise_steps = 1
+        opt.denoise_steps = 3
+        opt.split_dataset = False
+        opt.graph_iter = True
+        opt.lambda_diffcl = 1e-5
+
+    elif opt.dataset == 'gowalla':
+        opt.lr = 1e-2
+        opt.epoch = 50
+        opt.batch_size_d = 64
+        opt.r = 0.5
+        opt.middle_size = 128
+        opt.sample_epoch = 8
+        opt.train_ratio = 0.02
+        opt.train_steps = 7
+        opt.denoise_steps = 4
+        opt.noise_steps = 4
+        opt.split_dataset = False
+        opt.scheduler = True
+        opt.graph_iter = True
+        opt.lambda_diffcl = 1e-6
+        
+    elif opt.dataset == 'yelp':
+        opt.lr = 1e-3
+        opt.r = 0.9
+        opt.epoch = 150
+        opt.sample_epoch = 5
+        opt.train_ratio = 0.05 
+        opt.train_steps = 5
+        opt.noise_steps = 2
+        opt.denoise_steps = 3
+        opt.split_dataset = False
+        opt.scheduler = False
+        opt.graph_iter = True
+        opt.lambda_diffcl = 1e-5
+
+    elif opt.dataset == 'beauty':
+        opt.lr = 1e-3
+        opt.r = 0.6
+        opt.epoch = 150
+        opt.sample_epoch = 5
+        opt.train_ratio = 0.05
+        opt.train_steps = 5
+        opt.noise_steps = 2
+        opt.denoise_steps = 3
+        opt.split_dataset = False
+        opt.scheduler = False
+        opt.graph_iter = False
+        opt.lambda_diffcl = 1e-5
+        
+    if opt.denoise_steps > opt.train_steps:
+        opt.denoise_steps = opt.train_steps
+        
+    opt.denoise_steps = opt.noise_steps + 1
+    return opt
+
 
 if __name__ == '__main__':
     opt = generate_opt()
